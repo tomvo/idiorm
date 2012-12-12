@@ -66,6 +66,10 @@
             'caching' => false,
         );
 
+        protected static $_connections;
+        protected static $_default_connection_name;
+        protected static $_current_connection;
+
         // Database connection, instance of the PDO class
         protected static $_db;
 
@@ -152,15 +156,50 @@
          * used by PDO to connect to the database. Often, this
          * will be the only configuration required to use Idiorm.
          */
-        public static function configure($key, $value=null) {
+        public static function configure($name, $key, $value=null) {
             // Shortcut: If only one argument is passed, 
             // assume it's a connection string
             if (is_null($value)) {
                 $value = $key;
                 $key = 'connection_string';
             }
-            self::$_config[$key] = $value;
+            self::$_config[$name][$key] = $value;
         }
+
+        public static function load_database($name, PDO $connection, $default = false){
+            self::$_connections[$name] = $connection;
+
+            if($default) {
+                self::$_default_connection_name = $name;
+            }
+        }
+
+        public static function set_connection($name=''){
+            echo 'set connection: ' . $name;
+            if(empty($name)){
+                if(empty(self::$_default_connection_name)) throw new Exception("No default database connection specified, specify default connection or provide name");
+                $name = self::$_default_connection_name;
+
+                self::$_current_connection = $name;
+                self::set_db();
+
+
+                echo 'Set DB: default conneection: ' . self::$_default_connection_name;
+            }else{
+                if(array_key_exists($name, self::$_connections)){
+                    self::$_current_connection = $name;
+                    self::set_db();
+
+                    //self::set_db(self::$_connections[$name]);
+                    //echo 'Set DB: ' .$name;
+                }else{
+                    throw new Exception($name . " connection doesn't exist", 1);
+                    
+                }
+            }
+        }
+
+
 
         /**
          * Despite its slightly odd name, this is actually the factory
@@ -169,8 +208,11 @@
          * ORM::for_table('table_name')->find_one()-> etc. As such,
          * this will normally be the first method called in a chain.
          */
-        public static function for_table($table_name) {
-            self::_setup_db();
+        public static function for_table($table_name, $database='') {
+
+            //self::_setup_db();
+            //self::set_connection($database);
+
             return new self($table_name);
         }
 
@@ -178,6 +220,9 @@
          * Set up the database connection used by the class.
          */
         protected static function _setup_db() {
+            
+            //return;
+
             if (!is_object(self::$_db)) {
                 $connection_string = self::$_config['connection_string'];
                 $username = self::$_config['username'];
@@ -186,6 +231,8 @@
                 $db = new PDO($connection_string, $username, $password, $driver_options);
                 $db->setAttribute(PDO::ATTR_ERRMODE, self::$_config['error_mode']);
                 self::set_db($db);
+            }elseif(empty(self::$_db)){
+                throw new Exception("No database connection specified");
             }
         }
 
@@ -195,9 +242,12 @@
          * PDO object as its database connection.
          */
         public static function set_db($db) {
+            //self::$_db = self::$_connections[self::$_current_connection];
             self::$_db = $db;
+            
             self::_setup_identifier_quote_character();
         }
+
 
         /**
          * Detect and initialise the character used to quote identifiers
@@ -262,6 +312,9 @@
 
                 // Replace placeholders in the query for vsprintf
                 $query = str_replace("?", "%s", $query);
+
+                // Avoid %format collision for vsprintf
+                //$query = str_replace("%", "%%", $query);
 
                 // Replace the question marks in the query with the parameters
                 $bound_query = vsprintf($query, $parameters);
