@@ -36,6 +36,22 @@
     $expected = "SELECT COUNT(*) AS `count` FROM `widget` LIMIT 1";
     Tester::check_equal("COUNT query", $expected);
 
+    ORM::for_table('person')->max('height');
+    $expected = "SELECT MAX(`height`) AS `max` FROM `person` LIMIT 1";
+    Tester::check_equal("MAX query", $expected);
+
+    ORM::for_table('person')->min('height');
+    $expected = "SELECT MIN(`height`) AS `min` FROM `person` LIMIT 1";
+    Tester::check_equal("MIN query", $expected);
+
+    ORM::for_table('person')->avg('height');
+    $expected = "SELECT AVG(`height`) AS `avg` FROM `person` LIMIT 1";
+    Tester::check_equal("AVG query", $expected);
+
+    ORM::for_table('person')->sum('height');
+    $expected = "SELECT SUM(`height`) AS `sum` FROM `person` LIMIT 1";
+    Tester::check_equal("SUM query", $expected);
+
     ORM::for_table('widget')->where('name', 'Fred')->find_one();
     $expected = "SELECT * FROM `widget` WHERE `name` = 'Fred' LIMIT 1";
     Tester::check_equal("Single where clause", $expected);
@@ -80,6 +96,10 @@
     $expected = "SELECT * FROM `widget` ORDER BY `name` ASC LIMIT 1";
     Tester::check_equal("ORDER BY ASC", $expected);
 
+    ORM::for_table('widget')->order_by_expr('SOUNDEX(`name`)')->find_one();
+    $expected = "SELECT * FROM `widget` ORDER BY SOUNDEX(`name`) LIMIT 1";
+    Tester::check_equal("ORDER BY expression", $expected);
+
     ORM::for_table('widget')->order_by_asc('name')->order_by_desc('age')->find_one();
     $expected = "SELECT * FROM `widget` ORDER BY `name` ASC, `age` DESC LIMIT 1";
     Tester::check_equal("Multiple ORDER BY", $expected);
@@ -91,6 +111,10 @@
     ORM::for_table('widget')->group_by('name')->group_by('age')->find_many();
     $expected = "SELECT * FROM `widget` GROUP BY `name`, `age`";
     Tester::check_equal("Multiple GROUP BY", $expected);
+
+    ORM::for_table('widget')->group_by_expr("FROM_UNIXTIME(`time`, '%Y-%m')")->find_many();
+    $expected = "SELECT * FROM `widget` GROUP BY FROM_UNIXTIME(`time`, '%Y-%m')";
+    Tester::check_equal("GROUP BY expression", $expected);
 
     ORM::for_table('widget')->where('name', 'Fred')->limit(5)->offset(5)->order_by_asc('name')->find_many();
     $expected = "SELECT * FROM `widget` WHERE `name` = 'Fred' ORDER BY `name` ASC LIMIT 5 OFFSET 5";
@@ -116,6 +140,10 @@
     $expected = "SELECT * FROM `widget` WHERE `name` = 'Fred' AND (`age` = '5' OR `age` = '10')";
     Tester::check_equal("Raw WHERE clause", $expected);
 
+    ORM::for_table('widget')->where_raw('STRFTIME("%Y", "now") = ?', array(2012))->find_many();
+    $expected = "SELECT * FROM `widget` WHERE STRFTIME(\"%Y\", \"now\") = '2012'";
+    Tester::check_equal("Raw WHERE clause with '%'", $expected);
+
     ORM::for_table('widget')->where_raw('`name` = "Fred"')->find_many();
     $expected = "SELECT * FROM `widget` WHERE `name` = \"Fred\"";
     Tester::check_equal("Raw WHERE clause with no parameters", $expected);
@@ -124,9 +152,13 @@
     $expected = "SELECT * FROM `widget` WHERE `age` = '18' AND (`name` = 'Fred' OR `name` = 'Bob') AND `size` = 'large'";
     Tester::check_equal("Raw WHERE clause in method chain", $expected);
 
+    ORM::for_table('widget')->raw_query('SELECT `w`.* FROM `widget` w')->find_many();
+    $expected = "SELECT `w`.* FROM `widget` w";
+    Tester::check_equal("Raw query", $expected);
+
     ORM::for_table('widget')->raw_query('SELECT `w`.* FROM `widget` w WHERE `name` = ? AND `age` = ?', array('Fred', 5))->find_many();
     $expected = "SELECT `w`.* FROM `widget` w WHERE `name` = 'Fred' AND `age` = '5'";
-    Tester::check_equal("Raw query", $expected);
+    Tester::check_equal("Raw query with parameters", $expected);
 
     ORM::for_table('widget')->select('name')->find_many();
     $expected = "SELECT `name` FROM `widget`";
@@ -148,9 +180,21 @@
     $expected = "SELECT COUNT(*) AS `count` FROM `widget`";
     Tester::check_equal("Literal expression in result columns", $expected);
 
+    ORM::for_table('widget')->select_many(array('widget_name' => 'widget.name'), 'widget_handle')->find_many();
+    $expected = "SELECT `widget`.`name` AS `widget_name`, `widget_handle` FROM `widget`";
+    Tester::check_equal("Aliases in select many result columns", $expected);
+
+    ORM::for_table('widget')->select_many_expr(array('count' => 'COUNT(*)'), 'SUM(widget_order)')->find_many();
+    $expected = "SELECT COUNT(*) AS `count`, SUM(widget_order) FROM `widget`";
+    Tester::check_equal("Literal expression in select many result columns", $expected);
+
     ORM::for_table('widget')->join('widget_handle', array('widget_handle.widget_id', '=', 'widget.id'))->find_many();
     $expected = "SELECT * FROM `widget` JOIN `widget_handle` ON `widget_handle`.`widget_id` = `widget`.`id`";
     Tester::check_equal("Simple join", $expected);
+
+    ORM::for_table('widget')->join('widget_handle', array('widget_handle.widget_id', '=', 'widget.id'))->find_one(5);
+    $expected = "SELECT * FROM `widget` JOIN `widget_handle` ON `widget_handle`.`widget_id` = `widget`.`id` WHERE `widget`.`id` = '5' LIMIT 1";
+    Tester::check_equal("Simple join with where_id_is method", $expected);
 
     ORM::for_table('widget')->inner_join('widget_handle', array('widget_handle.widget_id', '=', 'widget.id'))->find_many();
     $expected = "SELECT * FROM `widget` INNER JOIN `widget_handle` ON `widget_handle`.`widget_id` = `widget`.`id`";
@@ -198,12 +242,49 @@
     $expected = "INSERT INTO `widget` (`name`, `age`) VALUES ('Fred', '10')";
     Tester::check_equal("Insert data", $expected);
 
+    $widget = ORM::for_table('widget')->create();
+    $widget->name = "Fred";
+    $widget->age = 10;
+    $widget->set_expr('added', 'NOW()');
+    $widget->save();
+    $expected = "INSERT INTO `widget` (`name`, `age`, `added`) VALUES ('Fred', '10', NOW())";
+    Tester::check_equal("Insert data containing an expression", $expected);
+
     $widget = ORM::for_table('widget')->find_one(1);
     $widget->name = "Fred";
     $widget->age = 10;
     $widget->save();
     $expected = "UPDATE `widget` SET `name` = 'Fred', `age` = '10' WHERE `id` = '1'";
     Tester::check_equal("Update data", $expected);
+
+    $widget = ORM::for_table('widget')->find_one(1);
+    $widget->name = "Fred";
+    $widget->age = 10;
+    $widget->set_expr('added', 'NOW()');
+    $widget->save();
+    $expected = "UPDATE `widget` SET `name` = 'Fred', `age` = '10', `added` = NOW() WHERE `id` = '1'";
+    Tester::check_equal("Update data containing an expression", $expected);
+
+    $widget = ORM::for_table('widget')->find_one(1);
+    $widget->set(array("name" => "Fred", "age" => 10));
+    $widget->save();
+    $expected = "UPDATE `widget` SET `name` = 'Fred', `age` = '10' WHERE `id` = '1'";
+    Tester::check_equal("Update multiple fields", $expected);
+
+    $widget = ORM::for_table('widget')->find_one(1);
+    $widget->set(array("name" => "Fred", "age" => 10));
+    $widget->set_expr(array("added" => "NOW()", "lat_long" => "GeomFromText('POINT(1.2347 2.3436)')"));
+    $widget->save();
+    $expected = "UPDATE `widget` SET `name` = 'Fred', `age` = '10', `added` = NOW(), `lat_long` = GeomFromText('POINT(1.2347 2.3436)') WHERE `id` = '1'";
+    Tester::check_equal("Update multiple fields containing an expression", $expected);
+
+    $widget = ORM::for_table('widget')->find_one(1);
+    $widget->set(array("name" => "Fred", "age" => 10));
+    $widget->set_expr(array("added" => "NOW()", "lat_long" => "GeomFromText('POINT(1.2347 2.3436)')"));
+    $widget->lat_long = 'unknown';
+    $widget->save();
+    $expected = "UPDATE `widget` SET `name` = 'Fred', `age` = '10', `added` = NOW(), `lat_long` = 'unknown' WHERE `id` = '1'";
+    Tester::check_equal("Update multiple fields containing an expression (override previously set expression with plain value)", $expected);
 
     $widget = ORM::for_table('widget')->find_one(1);
     $widget->delete();
@@ -215,7 +296,15 @@
     $widget = ORM::for_table('widget')->select('widget.*')->find_one();
     $expected = "SELECT `widget`.* FROM `widget` LIMIT 1";
     Tester::check_equal("Issue #12 - incorrect quoting of column wildcard", $expected);
-
+    
+    $widget = ORM::for_table('widget')->where_raw('username LIKE "ben%"')->find_many();
+    $expected = 'SELECT * FROM `widget` WHERE username LIKE "ben%"';
+    Tester::check_equal('Issue #57 - _log_query method raises a warning when query contains "%"', $expected);
+    
+    $widget = ORM::for_table('widget')->where_raw('comments LIKE "has been released?%"')->find_many();
+    $expected = 'SELECT * FROM `widget` WHERE comments LIKE "has been released?%"';
+    Tester::check_equal('Issue #57 - _log_query method raises a warning when query contains "?"', $expected);
+    
     // Tests that alter Idiorm's config are done last
 
     ORM::configure('id_column', 'primary_key');
