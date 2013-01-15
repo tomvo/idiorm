@@ -1304,6 +1304,11 @@
             $statement = self::$_db->prepare($query);
             $success = $statement->execute($values);
 
+            if($success === false){
+                $error = $statement->errorInfo();
+                throw new \PDOException($error[2], $error[1]);
+            }
+
             // If we've just inserted a new record, set the ID of this object
             if ($this->_is_new) {
                 $this->_is_new = false;
